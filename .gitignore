@@ -1,0 +1,8 @@
+data/*
+!data/**/.gitkeep
+results/
+.snakemake/
+__pycache__/
+*.pyc
+*.log
+*.tmp
