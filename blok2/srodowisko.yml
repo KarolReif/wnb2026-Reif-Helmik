@@ -1,0 +1,8 @@
+name: bioinfo_base
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - bioawk
+  - gawk
+prefix: /home/karrei7845/.conda/envs/bioinfo_base
