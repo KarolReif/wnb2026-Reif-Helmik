@@ -1,0 +1,11 @@
+name: vcf-env
+channels:
+- bioconda
+- conda-forge
+- defaults
+dependencies:
+- gawk
+- samtools
+- bcftools
+- htslib 
+
