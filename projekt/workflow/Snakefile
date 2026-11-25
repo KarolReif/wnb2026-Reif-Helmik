@@ -1,0 +1,76 @@
+configfile: "config/config.yaml"
+OUT = config["output_dir"]
+
+rule all:
+    input:
+        f"{OUT}/02_blast/blast_raw.tsv",
+        f"{OUT}/01_extract/dart_info_oneline.tsv"
+
+# --- Etap 1: ekstrakcja danych z pliku DArT ---
+rule extract_probes:
+    input:
+        csv = config["dart_csv"]
+    output:
+        f"{OUT}/01_extract/probes.fa"
+    params:
+        first = config["dart_data_start_row"]
+    shell:
+        """
+        awk -F',' 'NR>={params.first} && (NR-{params.first})%2==0 {{ print ">"$1; print $2 }}' {input.csv} > {output}
+        """
+
+rule extract_snp_info:
+    input:
+        csv = config["dart_csv"]
+    output:
+        f"{OUT}/01_extract/dart_info_oneline.tsv"
+    params:
+        first = config["dart_data_start_row"] + 1,
+        col = config["dart_snp_col"]
+    shell:
+        """
+        awk -F',' -v OFS='\\t' 'NR>={params.first} && (NR-{params.first})%2==0 {{ print $1, ${params.col} }}' {input.csv} > {output}
+        """
+
+# --- Etap 2: mapowanie BLAST ---
+rule makeblastdb:
+    input:
+        fasta = config["genome_fasta"]
+    output:
+        f"{OUT}/02_blast/db/genome.nsq"
+    params:
+        prefix = f"{OUT}/02_blast/db/genome"
+    conda:
+        "envs/blast.yaml"
+    log:
+        "logs/makeblastdb.log"
+    shell:
+        "makeblastdb -in {input.fasta} -dbtype nucl -out {params.prefix} > {log} 2>&1"
+
+rule blastn:
+    input:
+        query = f"{OUT}/01_extract/probes.fa",
+        db = f"{OUT}/02_blast/db/genome.nsq"
+    output:
+        f"{OUT}/02_blast/blast_raw.tsv"
+    params:
+        prefix = f"{OUT}/02_blast/db/genome",
+        evalue = config["blast_evalue"],
+        mts = config["blast_max_target_seqs"],
+        fields = "qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore"
+    conda:
+        "envs/blast.yaml"
+    threads: 4
+    log:
+        "logs/blastn.log"
+    shell:
+        """
+        blastn -task blastn \
+            -db {params.prefix} \
+            -query {input.query} \
+            -out {output} \
+            -evalue {params.evalue} \
+            -max_target_seqs {params.mts} \
+            -num_threads {threads} \
+            -outfmt "6 {params.fields}" 2> {log}
+        """

@@ -1,0 +1,16 @@
+# Ścieżki
+dart_csv: "data/dart/DArT_SNP.csv"
+genome_fasta: "data/ref/genome.fa"
+output_dir: "results"
+# Format pliku DArT
+dart_header_row: 5
+dart_data_start_row: 6
+dart_id_col: 1
+dart_seq_col: 2
+dart_snp_col: 11
+dart_genotype_start_col: 26
+# Parametry BLAST
+blast_evalue: 1e-10
+blast_max_target_seqs: 1
+min_pident: 96.0
+min_aln_len: 68
