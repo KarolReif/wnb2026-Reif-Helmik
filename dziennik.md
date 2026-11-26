@@ -15,3 +15,9 @@
 - Przefiltrowaliśmy wyniki BLAST, wyznaczyliśmy orientację nici i wygenerowaliśmy plik dart_blast_filtered.tsv
 - Utworzyliśmy skrypt odtwarzający cały blok 3 od genomu do pliku dart_blast_filtered.tsv oraz tabelę statystyk.
 - Przesłaliśmy skrypt, plik dart_blast_filtered.tsv i tabelę statystyk na github i zatwierdziliśmy za pomocą Pull Requesta.
+
+#Blok 4
+- Utworzyliśmy środowisko vcf-env oraz katalog blok/4 z odniesieniami do wyników z bloku 3. 
+- Skrypt do_vcf.sh umożliwia nam zamianę danych do VCF: rozbicie opisu SNP, złączenie z trafieniami BLAST, wyliczenie pozycji genomowej wraz z poprawą alleli komplementarnych na nici minus.
+- Macierz DArT przekształciliśmy na genotypy. Wynik skompresowaliśmy i zapisaliśmy jako final.vcf.gz. 
+- Przeprowadziliśmy walidację narzędziem bcftools i kontrolę spójności, zapisaliśmy wyniki i wnioski w pliku walidacja.md.
