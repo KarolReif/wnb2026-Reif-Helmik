@@ -21,3 +21,9 @@
 - Skrypt do_vcf.sh umożliwia nam zamianę danych do VCF: rozbicie opisu SNP, złączenie z trafieniami BLAST, wyliczenie pozycji genomowej wraz z poprawą alleli komplementarnych na nici minus.
 - Macierz DArT przekształciliśmy na genotypy. Wynik skompresowaliśmy i zapisaliśmy jako final.vcf.gz. 
 - Przeprowadziliśmy walidację narzędziem bcftools i kontrolę spójności, zapisaliśmy wyniki i wnioski w pliku walidacja.md.
+
+#Blok 5
+- Stworzenie struktury projekt/ wraz z przeniesieniem czterech pierwszych reguł potoku DArT do pliku.
+- Skonfigurowanie pliku config oraz środowisk Conda w katalogu workflow/envs/.
+- Sprawdzenie poprawności szkieletu potoku w trybie próbnym oraz wygenerowanie grafu reguł.
+- Podzielenie się pozostałymi etapami w zakładce Issues na Githubie oraz wybranie rozszerzenia własnego (rozszerzenia 3).
