@@ -3,8 +3,7 @@ OUT = config["output_dir"]
 
 rule all:
     input:
-        f"{OUT}/03_blast_filter/dart_blast_filtered.tsv",
-        f"{OUT}/01_extract/dart_info_oneline.tsv"
+		f"{OUT}/04_vcf/step1_core.tsv"
 
 # --- Etap 1: ekstrakcja danych z pliku DArT ---
 rule extract_probes:
@@ -90,4 +89,21 @@ rule filtrowanie_blast:
 		awk -F'\\t' -v OFS='\\t' '$3 >= {params.identyczne} && $4 >= {params.dlugosc}' {input.dane_wejsciowe} > {OUT}/03_blast_filter/blast_96.tsv 2> {log}
 		sort -k1,1 -k12,12gr {OUT}/03_blast_filter/blast_96.tsv | awk -F'\\t' '!widziane[$1]++' > {OUT}/03_blast_filter/blast_best.tsv 2>> {log}
 		awk -F'\\t' -v OFS='\\t' '{{ print $0, ($9 < $10 ? "+" : "-") }}' {OUT}/03_blast_filter/blast_best.tsv > {output.wynik} 2>> {log}
+		"""
+
+# ---- Etap 4:Obliczenie pozycji genomowej SNP. #16
+rule pozycja_genomowa_snp:
+	input:
+		przefiltrowany_blast = f"{OUT}/03_blast_filter/dart_blast_filtered.tsv",
+		informacje_snp = f"{OUT}/01_extract/dart_info_oneline.tsv"
+	output:
+		tabela_wariantow = f"{OUT}/04_vcf/step1_core.tsv"
+	log:
+		"logs/pozycja_genomowa_snp.log"
+	shell:
+		"""
+		awk -F'\\t' -v OFS='\\t' '{{ split($2, a, "[:>]"); print $1, a[1], a[2], a[3] }}' {input.informacje_snp} > {OUT}/04_vcf/dart_info_split.tsv 2> {log}
+		awk -F'\\t' -v OFS='\\t' 'NR==FNR {{ info[$1] = $2 OFS $3 OFS $4; next }} {{ print $0, ($1 in info ? info[$1] : OFS OFS) }}' {OUT}/04_vcf/dart_info_split.tsv {input.przefiltrowany_blast} > {OUT}/04_vcf/dart_blast_with_snp.tsv 2>> {log}
+		awk -F'\\t' -v OFS='\\t' '{{ sstart = $9; strand = $13; snp = $14; if (strand == "+") gpos = sstart + snp - 1; else if (strand == "-") gpos = sstart - snp + 1; else gpos = "NA"; print $0, gpos }}' {OUT}/04_vcf/dart_blast_with_snp.tsv > {OUT}/04_vcf/dart_blast_with_genomic_snp.tsv 2>> {log}
+		awk -F'\\t' -v OFS='\\t' 'BEGIN {{ print "CHROM","POS","ID","REF","ALT","STRAND" }} {{ print $2, $NF, $1, $15, $16, $13 }}' {OUT}/04_vcf/dart_blast_with_genomic_snp.tsv > {output.tabela_wariantow} 2>> {log}
 		"""
