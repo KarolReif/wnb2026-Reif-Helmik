@@ -3,7 +3,7 @@ OUT = config["output_dir"]
 
 rule all:
     input:
-        f"{OUT}/02_blast/blast_raw.tsv",
+        f"{OUT}/03_blast_filter/dart_blast_filtered.tsv",
         f"{OUT}/01_extract/dart_info_oneline.tsv"
 
 # --- Etap 1: ekstrakcja danych z pliku DArT ---
@@ -74,3 +74,20 @@ rule blastn:
             -num_threads {threads} \
             -outfmt "6 {params.fields}" 2> {log}
         """
+# ---- Etap 3: Filtrowanie wyników BLAST i ustalenie orientacji nici. #15
+rule filtrowanie_blast:
+	input:
+		dane_wejsciowe = f"{OUT}/02_blast/blast_raw.tsv"
+	output:
+		wynik = f"{OUT}/03_blast_filter/dart_blast_filtered.tsv"
+	params:
+		identyczne = config["min_pident"],
+		dlugosc = config["min_aln_len"]
+	log:
+		"logs/filtrowanie_wynikow_blast.log"
+	shell:
+		"""
+		awk -F'\\t' -v OFS='\\t' '$3 >= {params.identyczne} && $4 >= {params.dlugosc}' {input.dane_wejsciowe} > {OUT}/03_blast_filter/blast_96.tsv 2> {log}
+		sort -k1,1 -k12,12gr {OUT}/03_blast_filter/blast_96.tsv | awk -F'\\t' '!widziane[$1]++' > {OUT}/03_blast_filter/blast_best.tsv 2>> {log}
+		awk -F'\\t' -v OFS='\\t' '{{ print $0, ($9 < $10 ? "+" : "-") }}' {OUT}/03_blast_filter/blast_best.tsv > {output.wynik} 2>> {log}
+		"""
