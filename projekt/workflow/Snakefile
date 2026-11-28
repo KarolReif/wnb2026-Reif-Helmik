@@ -3,7 +3,9 @@ OUT = config["output_dir"]
 
 rule all:
     input:
-        f"{OUT}/04_vcf/step2_core_rc.tsv"
+        f"{OUT}/04_vcf/final.vcf",
+        "raport/statystyki.md",
+        "raport/walidacja.md"
 
 # --- Etap 1: ekstrakcja danych z pliku DArT ---
 rule extract_probes:
@@ -132,4 +134,172 @@ rule korekta_alleli_minus:
             print
         }}
         ' {input} > {output} 2> {log}
+        """
+
+
+# --- Etap 6: Konwersja macierzy DArT na genotypy ---
+rule konwersja_genotypow:
+    input:
+        csv = config["dart_csv"]
+    output:
+        f"{OUT}/04_vcf/dart_genotypes.tsv"
+    log:
+        "logs/konwersja_genotypow.log"
+    shell:
+        "awk -f workflow/scripts/genotypy.awk {input.csv} > {output} 2> {log}"
+
+# --- Etap 7: Dołączenie genotypów do wariantów ---
+rule dolacz_genotypy:
+    input:
+        genotypes = f"{OUT}/04_vcf/dart_genotypes.tsv",
+        core_rc = f"{OUT}/04_vcf/step2_core_rc.tsv"
+    output:
+        f"{OUT}/04_vcf/step3_with_genotypes.tsv"
+    log:
+        "logs/dolacz_genotypy.log"
+    shell:
+        """
+        awk -F'\\t' -v OFS='\\t' '
+        NR == FNR {{
+            if (FNR == 1) {{ h = $0; next }}
+            id = $1; $1 = ""; sub(/^\\t/, "", $0); g[id] = $0; next
+        }}
+        FNR == 1 {{
+            tmp = h; sub(/^ID\\t?/, "", tmp)
+            print $0, tmp; next
+        }}
+        {{ print $0, ($3 in g ? g[$3] : "") }}
+        ' {input.genotypes} {input.core_rc} > {output} 2> {log}
+        """
+
+# --- Etap 7: Sortowanie i generowanie pliku VCF ---
+rule generuj_vcf:
+    input:
+        f"{OUT}/04_vcf/step3_with_genotypes.tsv"
+    output:
+        vcf = f"{OUT}/04_vcf/final.vcf"
+    log:
+        "logs/generuj_vcf.log"
+    shell:
+        """
+        awk -F'\\t' -v OFS='\\t' '
+        NR == 1 {{
+            print "##fileformat=VCFv4.2"
+            print "##source=DArT-BLAST-pipeline"
+            print "##INFO=<ID=STRAND,Number=1,Type=String,Description=\\"Orientacja dopasowania BLAST\\">"
+            print "##FORMAT=<ID=GT,Number=1,Type=String,Description=\\"Genotype\\">"
+            printf "#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO\\tFORMAT"
+            for (i=7; i<=NF; i++) printf "\\t%s", $i
+            printf "\\n"
+            next
+        }}
+        {{
+            printf "%s\\t%s\\t%s\\t%s\\t%s\\t.\\tPASS\\tSTRAND=%s\\tGT", $1, $2, $3, $4, $5, $6
+            for (i=7; i<=NF; i++) printf "\\t%s", $i
+            printf "\\n"
+        }}' <(
+            head -n 1 {input}
+            tail -n +2 {input} | LC_ALL=C sort -t$'\\t' -k1,1 -k2,2n
+        ) > {output.vcf} 2> {log}
+        """
+
+rule generuj_statystyki:
+    input:
+        probes = f"{OUT}/01_extract/probes.fa",
+        blast_raw = f"{OUT}/02_blast/blast_raw.tsv",
+        blast_filtered = f"{OUT}/03_blast_filter/dart_blast_filtered.tsv",
+        blast_best = f"{OUT}/03_blast_filter/blast_best.tsv",
+        vcf = f"{OUT}/04_vcf/final.vcf"
+    output:
+        "raport/statystyki.md"
+    shell:
+        """
+        mkdir -p raport
+        RAW=$(grep -c '>' {input.probes})
+        HIT=$(cut -f1 {input.blast_raw} | sort -u | wc -l)
+        FILT=$(wc -l < {input.blast_filtered})
+        BEST=$(wc -l < {input.blast_best})
+        PLUS=$(cut -f13 {input.blast_filtered} | grep -c '+')
+        MINUS=$(cut -f13 {input.blast_filtered} | grep -c '-')
+        VCF=$(grep -vc '^#' {input.vcf})
+
+        echo "# Podsumowanie statystyczne potoku DArT -> VCF" > {output}
+        echo "" >> {output}
+        echo "| Etap potoku | Liczba |" >> {output}
+        echo "|---|---|" >> {output}
+        echo "| Sondy wejściowe | $RAW |" >> {output}
+        echo "| Sondy z trafieniem BLAST | $HIT |" >> {output}
+        echo "| Trafienia po filtrze | $FILT |" >> {output}
+        echo "| Wybrane najlepsze dopasowania | $BEST |" >> {output}
+        echo "| Orientacja nici (+ / -) | $PLUS / $MINUS |" >> {output}
+        echo "| Ostateczne warianty w VCF | $VCF |" >> {output}
+        """
+rule generuj_walidacje:
+    input:
+        vcf = f"{OUT}/04_vcf/final.vcf",
+        step2 = f"{OUT}/04_vcf/step2_core_rc.tsv",
+        genome = config["genome_fasta"]
+    output:
+        "raport/walidacja.md"
+    conda:
+        "envs/vcf.yaml"
+    shell:
+        """
+        mkdir -p raport
+        
+        # 15.1 Kontrole podstawowe z Bloku 4
+        HEADER_COUNT=$(grep -c '^##' {input.vcf} || true)
+        VAR_COUNT=$(grep -vc '^#' {input.vcf} || true)
+        COL_COUNT=$(awk -F'\\t' '!/^#/ {{ print NF }}' {input.vcf} | sort -u)
+        DUP_COUNT=$(grep -v '^#' {input.vcf} | cut -f3 | sort | uniq -d | wc -l || true)
+
+        # 15.2 Kontrola bcftools z Bloku 4
+        BCF_STATUS="FAIL"
+        if bcftools view {input.vcf} > /dev/null 2>&1; then
+            BCF_STATUS="OK"
+        fi
+        BCF_STATS=$(bcftools stats {input.vcf} 2>&1 | head -n 30 || true)
+
+        # 15.3 Kontrola spójności z genomem z Bloku 4
+        samtools faidx {input.genome}
+        awk -F'\\t' 'NR > 1 {{ print $1":"$2"-"$2 }}' {input.step2} > regiony.tmp
+        samtools faidx -r regiony.tmp {input.genome} | grep -v '>' > zasady.tmp
+        tail -n +2 {input.step2} | cut -f1-5 > rdzen.tmp
+
+        ALIGN_STATS=$(paste rdzen.tmp zasady.tmp | awk -F'\\t' '
+        {{
+            g = toupper($6); r = toupper($4); a = toupper($5)
+            if (g == r) eq_ref++
+            else if (g == a) eq_alt++
+            else poza++
+        }}
+        END {{
+            n = eq_ref + eq_alt + poza
+            print "genom = DArT REF:", eq_ref+0
+            print "genom = DArT ALT:", eq_alt+0
+            print "poza {{REF, ALT}}:", poza+0
+            printf "spójnych (REF lub ALT): %.1f%%\\n", 100*(eq_ref+eq_alt)/n
+        }}')
+
+        rm -f regiony.tmp zasady.tmp rdzen.tmp
+
+        # Zapis do raportu
+        echo "# Wyniki walidacji pliku VCF" > {output}
+        echo "" >> {output}
+        echo "## 1. Kontrole podstawowe" >> {output}
+        echo "- Wiersze nagłówkowe (##): $HEADER_COUNT" >> {output}
+        echo "- Liczba wariantów: $VAR_COUNT" >> {output}
+        echo "- Liczba kolumn danych: $COL_COUNT" >> {output}
+        echo "- Zduplikowane ID markerów: $DUP_COUNT" >> {output}
+        echo "- Formalna poprawność (bcftools view): $BCF_STATUS" >> {output}
+        echo "" >> {output}
+        echo "## 2. Statystyki bcftools stats" >> {output}
+        echo '```' >> {output}
+        echo "$BCF_STATS" >> {output}
+        echo '```' >> {output}
+        echo "" >> {output}
+        echo "## 3. Spójność z genomem referencyjnym" >> {output}
+        echo '```' >> {output}
+        echo "$ALIGN_STATS" >> {output}
+        echo '```' >> {output}
         """
