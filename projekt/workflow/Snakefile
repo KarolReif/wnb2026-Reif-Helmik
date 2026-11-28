@@ -241,6 +241,8 @@ rule generuj_walidacje:
         genome = config["genome_fasta"]
     output:
         "raport/walidacja.md"
+    conda:
+        "envs/vcf.yaml"
     shell:
         """
         mkdir -p raport
